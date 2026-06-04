@@ -11,6 +11,10 @@ pipeline {
     environment {
         CONTAINER_NAME = 'challenge3'
         DOCKER_BUILDKIT = '1'
+        IMAGE_NAME = "${params.IMAGE_NAME}"
+        DOCKER_VM_HOST = "${params.DOCKER_VM_HOST}"
+        DOCKER_VM_USER = "${params.DOCKER_VM_USER}"
+        SSH_CREDENTIALS_ID = "${params.SSH_CREDENTIALS_ID}"
     }
 
     stages {
