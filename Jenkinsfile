@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    options {
-        timestamps()
-    }
-
     parameters {
         string(name: 'IMAGE_NAME', defaultValue: 'ttl.sh/abhi-challenge3:2h', description: 'Fully-qualified image name to build, push, and deploy.')
         string(name: 'DOCKER_VM_HOST', defaultValue: '', description: 'SSH host or IP address of the Docker VM.')
