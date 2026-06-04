@@ -16,54 +16,62 @@ pipeline {
     stages {
         stage('Build image') {
             steps {
-                sh """
+                sh '''
                     set -eu
-                    docker build --platform linux/amd64 -t '${params.IMAGE_NAME}' .
-                """
+                    docker build --platform linux/amd64 -t "${IMAGE_NAME}" .
+                '''
             }
         }
 
-         stages {
-        stage('Build') {
+        stage('Push image') {
             steps {
-                sh "go build main.go"
+                sh '''
+                    set -eu
+                    docker push "${IMAGE_NAME}"
+                '''
             }
         }
-        stage('Docker Build and Push') {
+
+        stage('Deploy on Docker VM') {
             steps {
-                sh "docker build -t ttl.sh/furkan-kocak:2h ."
-                sh "docker push ttl.sh/furkan-kocak:2h"
-            }
-        }
-        stage('Deploy') {
-            steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'DOCKER_SSH_KEY', keyFileVariable: 'DOCKER_SSH_KEY')]) {
+                script {
+                    if (!params.DOCKER_VM_HOST?.trim()) {
+                        error('Set DOCKER_VM_HOST before running the deploy stage.')
+                    }
+                }
+
+                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
                     sh '''
-                        ssh -i $DOCKER_SSH_KEY -o StrictHostKeyChecking=no laborant@docker \
-                            "docker pull ttl.sh/furkan-kocak:2h && \
-                             docker stop go-server || true && \
-                             docker rm go-server || true && \
-                             docker run -d -p 4444:4444 --name go-server ttl.sh/furkan-kocak:2h"
+                        set -eu
+                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
+                            set -eu
+                            docker pull '${IMAGE_NAME}'
+                            docker rm -f '${CONTAINER_NAME}' >/dev/null 2>&1 || true
+                            docker run -d --name '${CONTAINER_NAME}' --restart unless-stopped -p 4444:4444 '${IMAGE_NAME}'
+                        "
                     '''
                 }
             }
         }
-        stage('Test') {
+
+        stage('Test deployment') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'DOCKER_SSH_KEY', keyFileVariable: 'DOCKER_SSH_KEY')]) {
+                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
                     sh '''
-                        ssh -i $DOCKER_SSH_KEY -o StrictHostKeyChecking=no laborant@docker '
-                            sleep 3
-                            RESPONSE=$(wget -qO- http://localhost:4444/) || { echo "Health check failed: could not reach service"; exit 1; }
-                            echo "Response: $RESPONSE"
-                            echo "$RESPONSE" | grep -q "Name" || { echo "Missing Name"; exit 1; }
-                            echo "$RESPONSE" | grep -q "Description" || { echo "Missing Description"; exit 1; }
-                            echo "$RESPONSE" | grep -q "Url" || { echo "Missing Url"; exit 1; }
-                            echo "Test passed: Service is healthy and returns expected JSON"
-                        '
+                        set -eu
+                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
+                            set -eu
+                            sleep 2
+                            RESPONSE=\$(wget -qO- http://localhost:4444/)
+                            echo \"\$RESPONSE\"
+                            echo \"\$RESPONSE\" | grep -q '"Name"'
+                            echo \"\$RESPONSE\" | grep -q '"Description"'
+                            echo \"\$RESPONSE\" | grep -q '"Url"'
+                        "
                     '''
                 }
             }
         }
     }
 }
+ 
