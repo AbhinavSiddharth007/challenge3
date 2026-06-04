@@ -23,52 +23,45 @@ pipeline {
             }
         }
 
-        stage('Push image') {
+         stages {
+        stage('Build') {
             steps {
-                sh """
-                    set -eu
-                    docker push '${params.IMAGE_NAME}'
-                """
+                sh "go build main.go"
             }
         }
-
-        stage('Deploy on Docker VM') {
+        stage('Docker Build and Push') {
             steps {
-                script {
-                    if (!params.DOCKER_VM_HOST?.trim()) {
-                        error('Set DOCKER_VM_HOST before running the deploy stage.')
-                    }
-                }
-
-                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
-                    sh """
-                        set -eu
-                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no ${params.DOCKER_VM_USER}@${params.DOCKER_VM_HOST} "
-                            set -eu
-                            docker pull '${params.IMAGE_NAME}'
-                            docker rm -f '${CONTAINER_NAME}' >/dev/null 2>&1 || true
-                            docker run -d --name '${CONTAINER_NAME}' --restart unless-stopped -p 4444:4444 '${params.IMAGE_NAME}'
-                        "
-                    """
+                sh "docker build -t ttl.sh/furkan-kocak:2h ."
+                sh "docker push ttl.sh/furkan-kocak:2h"
+            }
+        }
+        stage('Deploy') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'DOCKER_SSH_KEY', keyFileVariable: 'DOCKER_SSH_KEY')]) {
+                    sh '''
+                        ssh -i $DOCKER_SSH_KEY -o StrictHostKeyChecking=no laborant@docker \
+                            "docker pull ttl.sh/furkan-kocak:2h && \
+                             docker stop go-server || true && \
+                             docker rm go-server || true && \
+                             docker run -d -p 4444:4444 --name go-server ttl.sh/furkan-kocak:2h"
+                    '''
                 }
             }
         }
-
-        stage('Test deployment') {
+        stage('Test') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
-                    sh """
-                        set -eu
-                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no ${params.DOCKER_VM_USER}@${params.DOCKER_VM_HOST} "
-                            set -eu
-                            sleep 2
-                            RESPONSE=\$(wget -qO- http://localhost:4444/)
-                            echo \"\$RESPONSE\"
-                            echo \"\$RESPONSE\" | grep -q '"Name"'
-                            echo \"\$RESPONSE\" | grep -q '"Description"'
-                            echo \"\$RESPONSE\" | grep -q '"Url"'
-                        "
-                    """
+                withCredentials([sshUserPrivateKey(credentialsId: 'DOCKER_SSH_KEY', keyFileVariable: 'DOCKER_SSH_KEY')]) {
+                    sh '''
+                        ssh -i $DOCKER_SSH_KEY -o StrictHostKeyChecking=no laborant@docker '
+                            sleep 3
+                            RESPONSE=$(wget -qO- http://localhost:4444/) || { echo "Health check failed: could not reach service"; exit 1; }
+                            echo "Response: $RESPONSE"
+                            echo "$RESPONSE" | grep -q "Name" || { echo "Missing Name"; exit 1; }
+                            echo "$RESPONSE" | grep -q "Description" || { echo "Missing Description"; exit 1; }
+                            echo "$RESPONSE" | grep -q "Url" || { echo "Missing Url"; exit 1; }
+                            echo "Test passed: Service is healthy and returns expected JSON"
+                        '
+                    '''
                 }
             }
         }
