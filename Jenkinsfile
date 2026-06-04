@@ -11,28 +11,24 @@ pipeline {
     environment {
         CONTAINER_NAME = 'challenge3'
         DOCKER_BUILDKIT = '1'
-        IMAGE_NAME = "${params.IMAGE_NAME}"
-        DOCKER_VM_HOST = "${params.DOCKER_VM_HOST}"
-        DOCKER_VM_USER = "${params.DOCKER_VM_USER}"
-        SSH_CREDENTIALS_ID = "${params.SSH_CREDENTIALS_ID}"
     }
 
     stages {
         stage('Build image') {
             steps {
-                sh '''
+                sh """
                     set -eu
-                    docker build --platform linux/amd64 -t "${IMAGE_NAME}" .
-                '''
+                    docker build --platform linux/amd64 -t '${params.IMAGE_NAME}' .
+                """
             }
         }
 
         stage('Push image') {
             steps {
-                sh '''
+                sh """
                     set -eu
-                    docker push "${IMAGE_NAME}"
-                '''
+                    docker push '${params.IMAGE_NAME}'
+                """
             }
         }
 
@@ -44,26 +40,26 @@ pipeline {
                     }
                 }
 
-                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                    sh '''
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    sh """
                         set -eu
-                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
+                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no ${params.DOCKER_VM_USER}@${params.DOCKER_VM_HOST} "
                             set -eu
-                            docker pull '${IMAGE_NAME}'
+                            docker pull '${params.IMAGE_NAME}'
                             docker rm -f '${CONTAINER_NAME}' >/dev/null 2>&1 || true
-                            docker run -d --name '${CONTAINER_NAME}' --restart unless-stopped -p 4444:4444 '${IMAGE_NAME}'
+                            docker run -d --name '${CONTAINER_NAME}' --restart unless-stopped -p 4444:4444 '${params.IMAGE_NAME}'
                         "
-                    '''
+                    """
                 }
             }
         }
 
         stage('Test deployment') {
             steps {
-                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                    sh '''
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    sh """
                         set -eu
-                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
+                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no ${params.DOCKER_VM_USER}@${params.DOCKER_VM_HOST} "
                             set -eu
                             sleep 2
                             RESPONSE=\$(wget -qO- http://localhost:4444/)
@@ -72,7 +68,7 @@ pipeline {
                             echo \"\$RESPONSE\" | grep -q '"Description"'
                             echo \"\$RESPONSE\" | grep -q '"Url"'
                         "
-                    '''
+                    """
                 }
             }
         }
