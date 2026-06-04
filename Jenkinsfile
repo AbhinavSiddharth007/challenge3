@@ -57,5 +57,24 @@ pipeline {
                 }
             }
         }
+
+        stage('Test deployment') {
+            steps {
+                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                    sh '''
+                        set -eu
+                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
+                            set -eu
+                            sleep 2
+                            RESPONSE=\$(wget -qO- http://localhost:4444/)
+                            echo \"\$RESPONSE\"
+                            echo \"\$RESPONSE\" | grep -q '"Name"'
+                            echo \"\$RESPONSE\" | grep -q '"Description"'
+                            echo \"\$RESPONSE\" | grep -q '"Url"'
+                        "
+                    '''
+                }
+            }
+        }
     }
 }
