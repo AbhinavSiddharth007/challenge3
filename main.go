@@ -2,57 +2,37 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
 )
 
-type homeResponse struct {
+type Simple struct {
 	Name        string
 	Description string
 	Url         string
 }
 
-type statusResponse struct {
-	Status string `json:"status"`
-}
-
-func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, homeResponse{
-			Name:        "Hello",
-			Description: "World",
-			Url:         r.Host,
-		})
-	})
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})
-	})
-
-	addr := ":4444"
-	if value := os.Getenv("PORT"); value != "" {
-		addr = ":" + value
+func handler(w http.ResponseWriter, r *http.Request) {
+	payload := Simple{
+		Name:        "Hello",
+		Description: "World",
+		Url:         r.Host,
 	}
 
-	log.Printf("listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		log.Printf("encode response: %v", err)
+		log.Printf("render response: %v", err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintln(w, string(body))
+}
 
-	if _, err := w.Write(body); err != nil {
-		log.Printf("write response: %v", err)
-	}
+func main() {
+	fmt.Println("Server listening on port 4444")
+	http.HandleFunc("/", handler)
+	log.Fatal(http.ListenAndServe(":4444", nil))
 }
