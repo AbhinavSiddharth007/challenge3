@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 )
 
 type Simple struct {
@@ -32,6 +33,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Self-check mode used by the Docker HEALTHCHECK.
+	// Runs as exec form, so it works on distroless (no shell, no wget needed).
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		resp, err := http.Get("http://localhost:4444/")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	fmt.Println("Server listening on port 4444")
 	http.HandleFunc("/", handler)
 	log.Fatal(http.ListenAndServe(":4444", nil))

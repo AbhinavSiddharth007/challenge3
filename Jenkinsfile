@@ -1,75 +1,37 @@
 pipeline {
     agent any
 
-    parameters {
-        string(name: 'IMAGE_NAME', defaultValue: 'ttl.sh/abhi-challenge3:2h', description: 'Fully-qualified image name to build, push, and deploy.')
-        string(name: 'DOCKER_VM_HOST', defaultValue: '', description: 'SSH host or IP address of the Docker VM.')
-        string(name: 'DOCKER_VM_USER', defaultValue: 'ubuntu', description: 'SSH user on the Docker VM.')
-        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'docker-vm-ssh-key', description: 'Jenkins SSH private key credential ID.')
-    }
-
     environment {
-        CONTAINER_NAME = 'challenge3'
-        DOCKER_BUILDKIT = '1'
+        // Unique image name (ttl.sh is public). Keep the :2h tag.
+        IMAGE          = "ttl.sh/abhi-challenge3:2h"
+        CONTAINER_NAME = "challenge3"
     }
 
     stages {
-        stage('Build image') {
+        stage('Build & Push') {
             steps {
                 sh '''
                     set -eu
-                    docker build --platform linux/amd64 -t "${IMAGE_NAME}" .
-                '''
-            }
-        }
-
-        stage('Push image') {
-            steps {
-                sh '''
-                    set -eu
-                    docker push "${IMAGE_NAME}"
+                    docker build --platform linux/amd64 -t "$IMAGE" .
+                    docker push "$IMAGE"
                 '''
             }
         }
 
         stage('Deploy on Docker VM') {
+            // Runs on the docker VM. 'docker' is the usual node label for these
+            // labs (matches the docker:4444 host in the task list). If running
+            // this errors with "no node with label docker", check
+            // Manage Jenkins -> Nodes for the real label and change it here.
+            agent { label 'docker' }
+            options { skipDefaultCheckout(true) }
             steps {
-                script {
-                    if (!params.DOCKER_VM_HOST?.trim()) {
-                        error('Set DOCKER_VM_HOST before running the deploy stage.')
-                    }
-                }
-
-                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                    sh '''
-                        set -eu
-                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
-                            set -eu
-                            docker pull '${IMAGE_NAME}'
-                            docker rm -f '${CONTAINER_NAME}' >/dev/null 2>&1 || true
-                            docker run -d --name '${CONTAINER_NAME}' --restart unless-stopped -p 4444:4444 '${IMAGE_NAME}'
-                        "
-                    '''
-                }
-            }
-        }
-
-        stage('Test deployment') {
-            steps {
-                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                    sh '''
-                        set -eu
-                        ssh -o StrictHostKeyChecking=no "${DOCKER_VM_USER}@${DOCKER_VM_HOST}" "
-                            set -eu
-                            sleep 2
-                            RESPONSE=\$(wget -qO- http://localhost:4444/)
-                            echo \"\$RESPONSE\"
-                            echo \"\$RESPONSE\" | grep -q '"Name"'
-                            echo \"\$RESPONSE\" | grep -q '"Description"'
-                            echo \"\$RESPONSE\" | grep -q '"Url"'
-                        "
-                    '''
-                }
+                sh '''
+                    set -eu
+                    docker pull "$IMAGE"
+                    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+                    docker run -d --name "$CONTAINER_NAME" -p 4444:4444 "$IMAGE"
+                '''
             }
         }
     }

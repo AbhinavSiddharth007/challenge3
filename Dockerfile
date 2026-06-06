@@ -22,4 +22,6 @@ EXPOSE 4444
 
 USER 65532:65532
 
+HEALTHCHECK --interval=10s --timeout=2s --retries=3 CMD ["/app/main", "healthcheck"]
+
 CMD ["/app/main"]
